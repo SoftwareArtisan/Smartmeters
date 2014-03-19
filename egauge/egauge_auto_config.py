@@ -26,17 +26,17 @@ import itertools
 """
 
 
-def measure_and_rotate(cfg, samples=30):
+def measure_and_rotate(cfg, samples=30, meter_base_names=None):
     config = cfg.getregisters(skip_write=True, get_vals=True)
     chdata = cfg.channelchecker(samples=samples)
 
-    cfg.rotate_voltage_cofig()
+    cfg.rotate_voltage_cofig(meter_base_names=meter_base_names)
     cfg.timeout = 25
     cfg.wait(cfg.reboot)
     return ((config, chdata))
 
 
-def auto_phase_match(cfg, samples=30, restore=False):
+def auto_phase_match(cfg, samples=30, restore=False, meter_base_names=None):
     data = []
 
     if 'PCKL_FILE' in os.environ:
@@ -46,7 +46,7 @@ def auto_phase_match(cfg, samples=30, restore=False):
         print "Making a backup config for later restore"
         cfg.getregisters(ofile=backupfile)
         for i in range(3):
-            data.append(measure_and_rotate(cfg, samples))
+            data.append(measure_and_rotate(cfg, samples, meter_base_names=meter_base_names))
         try:
             from cloud.serialization.cloudpickle import dump
             dump(data, open("{}/tests/{}T{}.pckl".format(egauge_config.THISDIR, cfg.devurl.netloc,

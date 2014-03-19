@@ -50,7 +50,10 @@ def parse_livevals(cont):
             rg.V = float(channels[rg.l])
             rg.P = float(child.text)
             rg.reg = child.attrib['src']
-            rg.pf = abs(rg.P / (rg.I * rg.V))
+            rg.pf = 0
+            if rg.I and rg.V:
+                rg.pf = abs(rg.P / (rg.I * rg.V))
+            
 
     return int(root.find('timestamp').text), regs
 
@@ -164,24 +167,35 @@ class egcfg:
         print resp, cont
         return resp, cont
 
-    def rotate_voltage_cofig(s, keep_phase_designator=True):
+    def rotate_voltage_cofig(s, keep_phase_designator=True, meter_base_names=None):
         """
         if keep_phase_designator then rename registers to correct voltage val
         """
         (channels, team, totals, users) = s.getregisters(get_vals=True)
         # rotate
         rotated_team = []
+        rotate_phase = True
         for reg in team:
-            if reg.type == 'P':
-                phase = int(reg.val[-1]) - 1
-                newphase = (phase + 1) % 3
-                if reg.name[-1] == reg.val[-1] and keep_phase_designator:
-                    newname = "{}.{}".format(reg.name.rpartition(".")[0], newphase + 1)
+            if meter_base_names is not None:
+                rotate_phase=False
+                if reg.name[:-2] in meter_base_names:
+                    rotate_phase = True
                 else:
-                    newname = reg.name
+                    rotate_phase = False
+            
+            if rotate_phase:
+                if reg.type == 'P':
+                    phase = int(reg.val[-1]) - 1
+                    newphase = (phase + 1) % 3
+                    if reg.name[-1] == reg.val[-1] and keep_phase_designator:
+                        newname = "{}.{}".format(reg.name.rpartition(".")[0], newphase + 1)
+                    else:
+                        newname = reg.name
 
-                newval = "{}*L{}".format(reg.val[:-3], newphase + 1)
-                rotated_team.append(Reg._make((reg.id, newname, newval, reg.type)))
+                    newval = "{}*L{}".format(reg.val[:-3], newphase + 1)
+                    rotated_team.append(Reg._make((reg.id, newname, newval, reg.type)))
+                else:
+                    rotated_team.append(reg)
             else:
                 rotated_team.append(reg)
 
