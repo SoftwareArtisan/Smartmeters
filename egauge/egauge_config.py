@@ -206,15 +206,27 @@ class egcfg:
         print resp, cont
         return resp, cont
 
-    def setregisters(s, ifile, skip_backup=False):
+    def _getversion(s):
+        version = "2.0"
+        try:
+            sts = s.status()
+            version = sts['swRev']
+        except Exception as ex:
+            print ex
+        print "version=", version
+        return version
+
+    def setregisters(s, ifile, skip_backup=False, version=None):
         """
         use json file to set register and CT configuration
         """
+        if version is None:
+            version = s._getversion()
         if not skip_backup:
-            s.getregisters()
+            s.getregisters(version=version)
         content = open(ifile, 'rt').read()
         obj = json.loads(content)
-        channels, team, totals = s._from_json(obj)
+        channels, team, totals = s._from_json(obj, version=version)
         body = s.get_installation_POST(channels, team, totals)
 
         uri = "/cgi-bin/protected/egauge-cfg"
@@ -223,13 +235,15 @@ class egcfg:
         print resp, cont
         return resp, cont
 
-    def getregisters(s, ofile=None, skip_write=False, get_vals=False):
+    def getregisters(s, ofile=None, skip_write=False, get_vals=False, version=None):
+        if version is None:
+            version = s._getversion()
         response, content = s.getcfg(skip_write=True)
         channels, team, totals, users = s.parse_installation(content)
         if ofile is None:
             ofile = "%s.conf.%d.json" % (s.devurl.hostname, int(time.time()))
         # create ouput json
-        obj = s._to_json(channels, team, totals)
+        obj = s._to_json(channels, team, totals, version=version)
         obj_str = s._format_json(obj)
 
         if not skip_write:
@@ -267,7 +281,7 @@ class egcfg:
         return op.getvalue()
 
     @staticmethod
-    def _to_json(channels, team, totals):
+    def _to_json(channels, team, totals, version="2.0"):
         chmap = dict((ch.id, ch) for ch in channels)
         teammap = dict((tm.id, tm) for tm in team)
 
@@ -285,9 +299,8 @@ class egcfg:
                 mul_str = "{:.3f}".format(float(mul))
 
             cts = {}
-            if mul_str in EG_CTCFG.CT_CFG_BY_MULTIPLIER:
-                ct_type = EG_CTCFG.CT_CFG_BY_MULTIPLIER[mul_str][0]
-            else:
+            ct_type = EG_CTCFG.get_ct_type_by_mul(mul_str, version=version)
+            if ct_type is None:
                 ct_type = 'custom'
                 cts['mul'] = mul_str
 
@@ -305,7 +318,7 @@ class egcfg:
         return obj
 
     @staticmethod
-    def _from_json(obj):
+    def _from_json(obj, version="2.0"):
         channels, teams, totals = [], [], []
         # <ch0> ... <ch15> .. not all will always be available
         CTs = obj['CTs']
@@ -316,7 +329,7 @@ class egcfg:
             ctname = EG_CTCFG.CT_MAP[ch_id]
             if ctname in ["L1", "L2", "L3"]:
                 channels.append(
-                    Channel._make((ch_id, EG_CTCFG.get_ch_row('PT'))))
+                    Channel._make((ch_id, EG_CTCFG.get_ch_row('PT', version=version))))
             else:
                 ct = CTs[ctname]
                 cal = None
@@ -325,7 +338,7 @@ class egcfg:
                 mul = None
                 if 'mul' in ct:
                     mul = ct['mul']
-                ch_row = EG_CTCFG.get_ch_row(ct['rating'], cal, mul)
+                ch_row = EG_CTCFG.get_ch_row(ct['rating'], cal, mul, version=version)
                 channels.append(Channel._make((ch_id, ch_row)))
 
         # process team --> registers
@@ -667,6 +680,7 @@ def cfg_opts():
     parser.add_option("--pushURI")
     parser.add_option("--ntpServer")
     parser.add_option("--path")
+    parser.add_option("--version")
     parser.add_option("--restore", default=False, action="store_true")
 
     return parser
@@ -735,9 +749,9 @@ def main_opts(parser, options, args):
             exit(2)
         eg.setntp(options.ntpServer)
     elif action == "getregisters":
-        eg.getregisters(options.cfgfile)
+        eg.getregisters(options.cfgfile, version=options.version)
     elif action == "setregisters":
-        eg.setregisters(options.cfgfile, options.skip_backup)
+        eg.setregisters(options.cfgfile, options.skip_backup, version=options.version)
     elif action == "rotate-voltage-config":
         eg.rotate_voltage_cofig()
     elif action == "auto-phase-match":
