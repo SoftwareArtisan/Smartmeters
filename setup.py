@@ -3,10 +3,7 @@ try:
 except ImportError:
     from distutils.core import setup
 
-import os.path
-import sys
-
-VERSION = '0.1'
+VERSION = '0.2'
 
 
 SETUP_DICT = dict(

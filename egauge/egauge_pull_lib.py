@@ -2,10 +2,12 @@
 # 2012 plotwatt.com
 #
 import logging
-import httplib2
 import httplib
 from datetime import datetime
 import calendar
+
+import httplib2
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("eg_pull")

@@ -1,18 +1,20 @@
 #!/usr/bin/env python
 
-import httplib2
 import httplib
 import logging
 import time
-import urlparse
 import urllib2
 import xml.etree.ElementTree as ET
 from collections import namedtuple
-import EG_CTCFG
 import json
 import StringIO
 from datetime import datetime, timedelta
 import os
+
+import httplib2
+
+import EG_CTCFG
+
 
 THISDIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,16 +55,27 @@ def parse_livevals(cont):
             rg.pf = 0
             if rg.I and rg.V:
                 rg.pf = abs(rg.P / (rg.I * rg.V))
-            
 
     return int(root.find('timestamp').text), regs
 
 
 class egcfg:
-
     def __init__(s, devurl, username, password, lg):
+        s.devurl = s.resolve_url(devurl)
+        s.device = s.devurl.hostname
+        s.username = username
+        s.password = password
+        s.lg = lg or logger
+        s.req = httplib2.Http(timeout=60)
+        s.req.add_credentials(username, password)  # Digest Authentication
+
+    def resolve_url(self, devurl):
+
         if not devurl.startswith('http'):
             devurl = "http://" + devurl
+
+        import urlparse
+
         uu = urlparse.urlparse(devurl)
         if "." not in uu.hostname:
             # we will assume that it is egauge1910, or just 1910
@@ -74,12 +87,7 @@ class egcfg:
             hn += ".egaug.es"
             uu = urlparse.urlparse("http://" + hn)
 
-        s.devurl = uu
-        s.username = username
-        s.password = password
-        s.lg = lg or logger
-        s.req = httplib2.Http(timeout=60)
-        s.req.add_credentials(username, password)   # Digest Authentication
+        return uu
 
     def request(s, uri, method="GET", body=None, verbose=True, retry=True):
         if not uri.startswith("/"):
@@ -95,39 +103,39 @@ class egcfg:
             tries = 1
         for rtry in range(tries):
             response, content = s.req.request(requrl, method=method,
-                                          headers={'Connection': 'Keep-Alive',
-                                                   'accept-encoding': 'gzip',
-                                                   'Content-Type': 'application/xml'},
-                                          body=body)
-        
+                                              headers={'Connection': 'Keep-Alive',
+                                                       'accept-encoding': 'gzip',
+                                                       'Content-Type': 'application/xml'},
+                                              body=body)
+
             if response['status'] == '404':
-                s.lg.warning("device not found. Probably it is not up")
+                s.lg.warning("device not found. Probably it is not up {}".format(requrl))
             else:
                 break
             time.sleep(2)
         if response['status'] == '401':
-            s.lg.warning("Unauthorized request!")
+            s.lg.warning("Unauthorized request! {}".format(requrl))
             raise urllib2.HTTPError(
                 requrl, 401, "Unauthorized Request", hdrs=None, fp=None)
         elif response['status'] == '400':
-            s.lg.warning("Bad Request!")
+            s.lg.warning("Bad Request! {}".format(requrl))
             raise urllib2.HTTPError(
                 requrl, 400, "Bad Request", hdrs=None, fp=None)
         elif response['status'] == '500':
-            s.lg.warning("Internal Error!")
+            s.lg.warning("Internal Error! {}".format(requrl))
             raise urllib2.HTTPError(
                 requrl, 500, "Internal Error", hdrs=None, fp=None)
         elif response['status'] == '408':
-            s.lg.warning("Request timeout!")
+            s.lg.warning("Request timeout! {}".format(requrl))
             raise urllib2.HTTPError(
                 requrl, 408, "Request Timeout", hdrs=None, fp=None)
         elif response['status'] == '404':
-            s.lg.warning("device not found. Probably it is not up")
+            s.lg.warning("device not found. Probably it is not up. {}".format(requrl))
             raise urllib2.HTTPError(
                 requrl, 404, "Device not found", hdrs=None, fp=None)
         elif 'not authorized' in content.lower():
-            s.lg.warning("Unauthorized request! using username={} and password={}".format(
-                s.username, s.password))
+            s.lg.warning("Unauthorized request! using username={} and password={} {}".format(
+                s.username, s.password, requrl))
             response['status'] = 401
             raise urllib2.HTTPError(
                 requrl, 401, "Unauthorized Request", hdrs=None, fp=None)
@@ -177,12 +185,12 @@ class egcfg:
         rotate_phase = True
         for reg in team:
             if meter_base_names is not None:
-                rotate_phase=False
+                rotate_phase = False
                 if reg.name[:-2] in meter_base_names:
                     rotate_phase = True
                 else:
                     rotate_phase = False
-            
+
             if rotate_phase:
                 if reg.type == 'P':
                     phase = int(reg.val[-1]) - 1
@@ -263,21 +271,21 @@ class egcfg:
     @staticmethod
     def _format_json(obj):
         op = StringIO.StringIO()
-        print >>op, '{"CTs": {'
+        print >> op, '{"CTs": {'
         CTs = obj['CTs']
         ctnames = sorted(CTs.keys(), key=lambda nm: int(nm[2:]))
         for idx, ctname in enumerate(ctnames):
             if idx != 0:
-                print >>op, ",",
-            print >>op, '"%s":' % (ctname), json.dumps(CTs[ctname])
-        print >>op, '}, "Registers": {'
+                print >> op, ",",
+            print >> op, '"%s":' % (ctname), json.dumps(CTs[ctname])
+        print >> op, '}, "Registers": {'
         REGS = obj['Registers']
         regnames = sorted(REGS.keys(), key=lambda rg: int(rg[1:]))
         for idx, regname in enumerate(regnames):
             if idx != 0:
-                print >>op, ",",
-            print >>op, '"%s":' % (regname), json.dumps(REGS[regname])
-        print >>op, '}}'
+                print >> op, ",",
+            print >> op, '"%s":' % (regname), json.dumps(REGS[regname])
+        print >> op, '}}'
         return op.getvalue()
 
     @staticmethod
@@ -348,9 +356,9 @@ class egcfg:
             ridx = regname[1:]
             reg = REGS[regname]
             rg = Reg._make((int(ridx),
-                           reg['name'],
-                           reg['val'],
-                           reg['type']))
+                            reg['name'],
+                            reg['val'],
+                            reg['type']))
             teams.append(rg)
 
         return channels, teams, totals
@@ -455,6 +463,7 @@ class egcfg:
       <pushInterval>600</pushInterval>
        <pushOptions></pushOptions>
     """
+
     def register(s, pushURI, pushInterval=60, sec=False):
         uri = "/cgi-bin/protected/egauge-cfg"
         body = 'pushURI="%s"\n' % pushURI
@@ -463,7 +472,7 @@ class egcfg:
         if sec:
             body += 'pushOptions="sec,gzip"\n'
         s.request(uri, method="POST", body=body)
-        print body
+        return body
 
     def upgrade(s, branch):
         uri = "/cgi-bin/protected/sw-upgrade?branch="
@@ -566,8 +575,8 @@ class egcfg:
         wait for at most timeout seconds to check if the server is up
         """
         if fn is None:
-            fn = lambda:  s.request("/status.xml")
-        
+            fn = lambda: s.request("/status.xml")
+
         found = False
         waited = 0
         step = 2
@@ -642,7 +651,6 @@ class egcfg:
         for child in root._children:
             st[child.tag] = child.text
 
-        print st
         return st
 
 
@@ -660,61 +668,56 @@ DEFAULT_USERNAME = "owner"
 if 'EG_USERNAME' in os.environ:
     DEFAULT_USERNAME = os.environ['EG_USERNAME']
 
+def cfg_arg_parse():
+    import argparse
 
-def cfg_opts():
-    from optparse import OptionParser
-    parser = OptionParser(usage="""usage: %prog action device_url [options]
-                action = {}""".format("|".join(actions)))
-    parser.add_option("--seconds", default=False, action="store_true",
-                      help="will try to fetch seconds data if specified")
-    parser.add_option("--skip-backup", default=False, action="store_true",
-                      help="Do not take backup of the current config")
-    parser.add_option("--username", default=DEFAULT_USERNAME)
-    parser.add_option("--timeout", default=0, type="int")
-    parser.add_option("--samples", default=DEFAULT_SAMPLES, type="int")
-    parser.add_option("--password", default=DEFAULT_PASSWORD, help="export EG_PASSWORD instead of this")
-    parser.add_option("--cfgfile", default=None,
-                      help="-- will write to stdout")
-    parser.add_option("--branch", help="branch to use for upgrades, default=stable", default="stable")
-    parser.add_option("--pushInterval")
-    parser.add_option("--pushURI")
-    parser.add_option("--ntpServer")
-    parser.add_option("--path")
-    parser.add_option("--version")
-    parser.add_option("--restore", default=False, action="store_true")
+    parser = argparse.ArgumentParser(description='eGauge Management Tool',add_help=False)
+
+    parser.add_argument('action', nargs='?', choices=actions, help='action')
+    parser.add_argument('url', help='eGauge ID or complete url')
+
+    parser.add_argument("--seconds", default=False, action="store_true",
+                        help="will try to fetch seconds data if specified")
+    parser.add_argument("--skip-backup", default=False, action="store_true",
+                        help="Do not take backup of the current config")
+    parser.add_argument("--username", default=DEFAULT_USERNAME)
+    parser.add_argument("--password", default=DEFAULT_PASSWORD, help="export EG_PASSWORD instead of this")
+    parser.add_argument("--timeout", default=0, type=int)
+    parser.add_argument("--samples", default=DEFAULT_SAMPLES, type=int)
+    parser.add_argument("--cfgfile", default=None, help="-- will write to stdout")
+    parser.add_argument("--branch", help="branch to use for upgrades, default=stable", default="stable")
+    parser.add_argument("--pushInterval",type=int)
+    parser.add_argument("--pushURI")
+    parser.add_argument("--ntpServer")
+    parser.add_argument("--path")
+    parser.add_argument("--version")
+    parser.add_argument("--restore", default=False, action="store_true")
 
     return parser
 
+def get_opts(cmd_line=None):
+    parser = cfg_arg_parse()
+    return parser.parse_args(cmd_line) if cmd_line else parser.parse_args()
 
-def main():
-    parser = cfg_opts()
-    (options, args) = parser.parse_args()
-    main_opts(parser, options, args)
+def egauge_cfg():
 
+    options = get_opts()
 
-def main_opts(parser, options, args):
-    if len(args) < 2:
-        parser.print_help()
-        exit(2)
+    action = options.action
+    device_url = options.url
 
-    action = args[0]
-    device_url = args[1]
-
-    if action not in actions:
-        print "unknown", action
-        parser.print_help()
-        exit(2)
     eg = egcfg(device_url, options.username, options.password, logger)
     eg.timeout = int(options.timeout)
 
-    pushInterval = None
     retval = 0
-    if options.pushInterval:
-        pushInterval = int(options.pushInterval)
+    if not action:
+        logger.warn("Missing expected action:"+action)
+        exit(retval)
+
     if action == "register":
-        eg.register(options.pushURI, pushInterval, options.seconds)
+        print(eg.register(options.pushURI, options.pushInterval, options.seconds))
     if action == "de-register":
-        eg.register("", pushInterval, options.seconds)
+        print(eg.register("", options.pushInterval, options.seconds))
     if action == "channelchecker":
         eg.channelchecker(int(options.samples))
     elif action == "reboot":
@@ -726,7 +729,7 @@ def main_opts(parser, options, args):
     elif action == "netconfig":
         eg.netconfig()
     elif action == "status":
-        eg.status()
+        print eg.status()
     elif action == "getntp":
         eg.getntp()
     elif action == "is-caught-up":
@@ -762,4 +765,4 @@ def main_opts(parser, options, args):
         exit(retval)
 
 if __name__ == "__main__":
-    main()
+    egauge_cfg()

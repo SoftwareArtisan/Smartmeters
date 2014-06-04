@@ -1,2 +1,8 @@
-cloud
-httplib2
+cloud>=2.8.5
+configobj>=5.0.5
+httplib2>=0.9
+py2-ipaddress>=2.0
+requests>=2.3.0
+six>=1.6.1
+wsgiref>=0.1.2
+xmltodict>=0.9.0
